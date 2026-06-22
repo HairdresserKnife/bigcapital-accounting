@@ -1,0 +1,198 @@
+# This is a production version of the Bigcapital docker-compose.yml file.
+
+version: '3.3'
+
+services:
+  proxy:
+    image: envoyproxy/envoy:v1.30-latest
+    depends_on:
+      - server
+      - webapp
+    ports:
+      - '${PUBLIC_PROXY_PORT:-80}:80'
+      - '${PUBLIC_PROXY_SSL_PORT:-443}:443'
+    tty: true
+    volumes:
+      - ./docker/envoy/envoy.yaml:/etc/envoy/envoy.yaml
+    restart: on-failure
+    networks:
+      - bigcapital_network
+
+  webapp:
+    container_name: bigcapital-webapp
+    image: bigcapitalhq/webapp:latest
+    restart: on-failure
+    networks:
+      - bigcapital_network
+
+  server:
+    container_name: bigcapital-server
+    image: bigcapitalhq/server:latest
+    expose:
+      - '3000'
+    links:
+      - mysql
+      - redis
+    depends_on:
+      - mysql
+      - redis
+    restart: on-failure
+    networks:
+      - bigcapital_network
+    environment:
+      # Mail
+      - MAIL_HOST=${MAIL_HOST}
+      - MAIL_USERNAME=${MAIL_USERNAME}
+      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - MAIL_PORT=${MAIL_PORT}
+      - MAIL_SECURE=${MAIL_SECURE}
+      - MAIL_FROM_NAME=${MAIL_FROM_NAME}
+      - MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS}
+
+      # Database
+      - DB_HOST=mysql
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_CHARSET=${DB_CHARSET}
+
+      # System database
+      - SYSTEM_DB_NAME=${SYSTEM_DB_NAME}
+
+      # Redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - QUEUE_HOST=redis
+      - QUEUE_PORT=6379
+
+      # Tenants databases
+      - TENANT_DB_NAME_PERFIX=${TENANT_DB_NAME_PERFIX}
+
+      # Authentication
+      - JWT_SECRET=${JWT_SECRET}
+
+      # Application
+      - BASE_URL=${BASE_URL}
+
+      # Sign-up restrictions
+      - SIGNUP_DISABLED=${SIGNUP_DISABLED}
+      - SIGNUP_ALLOWED_DOMAINS=${SIGNUP_ALLOWED_DOMAINS}
+      - SIGNUP_ALLOWED_EMAILS=${SIGNUP_ALLOWED_EMAILS}
+
+      # Sign-up email confirmation
+      - SIGNUP_EMAIL_CONFIRMATION=${SIGNUP_EMAIL_CONFIRMATION}
+
+      # Gotenberg (Pdf generator)
+      - GOTENBERG_URL=${GOTENBERG_URL}
+      - GOTENBERG_DOCS_URL=${GOTENBERG_DOCS_URL}
+
+      # Exchange Rate
+      - EXCHANGE_RATE_SERVICE=${EXCHANGE_RATE_SERVICE}
+      - OPEN_EXCHANGE_RATE_APP_ID-${OPEN_EXCHANGE_RATE_APP_ID}
+
+      # Bank Sync
+      - BANK_FEED_ENABLED=${BANK_FEED_ENABLED}
+
+      # Plaid
+      - PLAID_ENV=${PLAID_ENV}
+      - PLAID_CLIENT_ID=${PLAID_CLIENT_ID}
+      - PLAID_SECRET=${PLAID_SECRET}
+      - PLAID_LINK_WEBHOOK=${PLAID_LINK_WEBHOOK}
+
+      # Lemon Squeez
+      - LEMONSQUEEZY_API_KEY=${LEMONSQUEEZY_API_KEY}
+      - LEMONSQUEEZY_STORE_ID=${LEMONSQUEEZY_STORE_ID}
+      - LEMONSQUEEZY_WEBHOOK_SECRET=${LEMONSQUEEZY_WEBHOOK_SECRET}
+      - HOSTED_ON_BIGCAPITAL_CLOUD=${HOSTED_ON_BIGCAPITAL_CLOUD}
+
+      # New Relic matrics tracking.
+      - NEW_RELIC_DISTRIBUTED_TRACING_ENABLED=${NEW_RELIC_DISTRIBUTED_TRACING_ENABLED}
+      - NEW_RELIC_LOG=${NEW_RELIC_LOG}
+      - NEW_RELIC_AI_MONITORING_ENABLED=${NEW_RELIC_AI_MONITORING_ENABLED}
+      - NEW_RELIC_CUSTOM_INSIGHTS_EVENTS_MAX_SAMPLES_STORED=${NEW_RELIC_CUSTOM_INSIGHTS_EVENTS_MAX_SAMPLES_STORED}
+      - NEW_RELIC_SPAN_EVENTS_MAX_SAMPLES_STORED=${NEW_RELIC_SPAN_EVENTS_MAX_SAMPLES_STORED}
+      - NEW_RELIC_LICENSE_KEY=${NEW_RELIC_LICENSE_KEY}
+      - NEW_RELIC_APP_NAME=${NEW_RELIC_APP_NAME}
+
+      # S3
+      - S3_REGION=${S3_REGION}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - S3_BUCKET=${S3_BUCKET}
+
+      # Stripe
+      - STRIPE_PAYMENT_SECRET_KEY=${STRIPE_PAYMENT_SECRET_KEY}
+      - STRIPE_PAYMENT_PUBLISHABLE_KEY=${STRIPE_PAYMENT_PUBLISHABLE_KEY}
+      - STRIPE_PAYMENT_CLIENT_ID=${STRIPE_PAYMENT_CLIENT_ID}
+      - STRIPE_PAYMENT_WEBHOOKS_SECRET=${STRIPE_PAYMENT_WEBHOOKS_SECRET}
+      - STRIPE_PAYMENT_REDIRECT_URL=${STRIPE_PAYMENT_REDIRECT_URL}
+
+  database_migration:
+    container_name: bigcapital-database-migration
+    build:
+      context: ./
+      dockerfile: docker/migration/Dockerfile
+    environment:
+      # Database
+      - DB_HOST=mysql
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_CHARSET=${DB_CHARSET}
+      - SYSTEM_DB_NAME=${SYSTEM_DB_NAME}
+      # Tenants databases
+      - TENANT_DB_NAME_PERFIX=${TENANT_DB_NAME_PERFIX}
+    depends_on:
+      - mysql
+    networks:
+      - bigcapital_network
+
+  mysql:
+    container_name: bigcapital-mysql
+    restart: on-failure
+    build:
+      context: ./docker/mariadb
+    environment:
+      - MYSQL_DATABASE=${SYSTEM_DB_NAME}
+      - MYSQL_USER=${DB_USER}
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+    volumes:
+      - mysql:/var/lib/mysql
+    expose:
+      - '3306'
+    networks:
+      - bigcapital_network
+
+  redis:
+    container_name: bigcapital-redis
+    restart: on-failure
+    build:
+      context: ./docker/redis
+    expose:
+      - '6379'
+    volumes:
+      - redis:/data
+    networks:
+      - bigcapital_network
+
+  gotenberg:
+    image: gotenberg/gotenberg:7
+    expose:
+      - '9000'
+    networks:
+      - bigcapital_network
+
+# Volumes
+volumes:
+  mysql:
+    name: bigcapital_prod_mysql
+    driver: local
+
+  redis:
+    name: bigcapital_prod_redis
+    driver: local
+
+# Networks
+networks:
+  bigcapital_network:
+    driver: bridge
